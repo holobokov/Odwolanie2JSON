@@ -1,2 +1,11 @@
 services:
-  
+  odwolania2json:
+    build: .
+    env_file:
+      - .env
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./input:/app/input
+      - ./output:/app/output
+      - ./configs:/app/configs

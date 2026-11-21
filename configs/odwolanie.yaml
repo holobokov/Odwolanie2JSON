@@ -1,0 +1,45 @@
+class_id: odwolanie
+description: "Odwołanie do Krajowej Izby Odwoławczej"
+classification_keywords:
+  - "odwołanie"
+  - "krajowa izba odwoławcza"
+  - "zarzut"
+  - "czynność zamawiającego"
+  - "uZP"
+pages_strategy:
+  first_pages: 4
+  include_last: true
+schema_spec:
+  description: "Wyodrębnij dokładnie strukturę odwołania zgodną z poniższym JSON."
+  root_fields:
+    OdwolanieKIO:
+      data: "Data sporządzenia odwołania; YYYY-MM-DD lub null"
+      czynnosc_dzien: "Dzień dokonania pierwszej/zgłoszonej czynności zamawiającego; YYYY-MM-DD lub null"
+      czynnosc_powod_id: "Liczba całkowita 1-12 określona WYŁĄCZNIE na podstawie pierwszego zarzutu"
+      czynnosc_opis: "Nie wyznaczaj tego pola; zostanie ustawione deterministycznie po wyborze ID"
+      miejscowosc: "Miejscowość z treści odwołania"
+    Odwolujacy:
+      instruction: "Lista; dla konsorcjum wyodrębnij tylko lidera konsorcjum"
+      fields:
+        krs: "10 cyfr bez prefiksów i znaków"
+        nazwa: "Nazwa wykonawcy"
+        nip: "10 cyfr"
+        regon: "9 lub 14 cyfr"
+        przez-pelnomocnika: "1 gdy odwołanie wnosi pełnomocnik, inaczej 0"
+        pelnomocnik:
+          imie_nazwisko: "Imię i nazwisko pełnomocnika"
+          nazwa: "Nazwa kancelarii lub spółki pełnomocnika"
+          mail: "Adres e-mail"
+    Zamawiajacy:
+      instruction: "Jeżeli jest więcej niż jeden zamawiający, pierwszy/prowadzący ma 1, pozostali 0"
+      fields:
+        krs: "10 cyfr"
+        nazwa: "Nazwa zamawiającego"
+        nip: "10 cyfr"
+        regon: "9 lub 14 cyfr"
+        prowadzacy_postepowanie: "1, 0 lub null; null przy jednym zamawiającym"
+    ZamowieniePubliczne:
+      numer_bzp: "Numer w postaci YYYY/BZP ######## lub YYYY/BZP ########/##"
+      numer_postepowania: "Numer własny postępowania"
+      numer_ted: "Numer w postaci NNNNNN-YYYY"
+      tytul: "Tytuł zamówienia"

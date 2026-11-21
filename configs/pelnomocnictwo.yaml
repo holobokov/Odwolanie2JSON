@@ -1,0 +1,30 @@
+class_id: pelnomocnictwo
+description: "Pełnomocnictwo procesowe lub ogólne"
+classification_keywords:
+  - "pełnomocnictwo"
+  - "mocodawca"
+  - "pełnomocnik"
+  - "upoważnia"
+  - "ustanawia"
+  - "mianownik"
+pages_strategy:
+  first_pages: 4
+  include_last: true
+schema_spec:
+  description: "Wyodrębnij dane mocodawców, podpisujących i pełnomocników."
+  root_fields:
+    mocodawca:
+      instruction: "Lista wszystkich mocodawców"
+      data:
+        imie_nazwisko: "Imię i nazwisko osoby fizycznej lub null"
+        krs: "10 cyfr lub null"
+        nazwa: "Nazwa osoby prawnej lub null"
+        nip: "10 cyfr lub null"
+        typ: "osoba_prawna lub osoba_fizyczna"
+      podpisujacy:
+        imie_nazwisko: "Obowiązkowo imię i nazwisko podpisującego"
+    pelnomocnicy:
+      instruction: "Lista pełnomocników; imię i nazwisko w mianowniku"
+      imie_nazwisko: "Imię i nazwisko w mianowniku"
+      pesel: "Liczba całkowita lub null"
+

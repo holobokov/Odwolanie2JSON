@@ -1,0 +1,22 @@
+class_id: przelew
+description: "Przelew bankowy lub zlecenie przelewu"
+classification_keywords:
+  - "przelew"
+  - "rachunek"
+  - "bank"
+  - "kwota"
+  - "tytuł"
+  - "numer transakcji"
+pages_strategy:
+  first_pages: 4
+  include_last: true
+schema_spec:
+  description: "Wyodrębnij dane zlecenia przelewu bankowego."
+  root_fields:
+    przelew_bankowy:
+      data_operacji: "Data operacji w ISO YYYY-MM-DD lub null"
+      kwota: "Kwota jako liczba zmiennoprzecinkowa"
+      na_rachunek: "Polski IBAN; dokładnie 26 cyfr po usunięciu PL i separatorów"
+      numer_transakcji: "Numer transakcji lub operacji"
+      tytul: "Tytuł przelewu"
+      z_rachunku: "Polski IBAN; dokładnie 26 cyfr po usunięciu PL i separatorów"

@@ -23,8 +23,10 @@ class PdfReader:
 
     def _ocr_engine(self):
         if self._ocr is None:
-            from rapidocr_onnxruntime import RapidOCR
-
+            try:
+                from rapidocr_onnxruntime import RapidOCR
+            except ImportError:
+                from rapidocr import RapidOCR
             self._ocr = RapidOCR()
         return self._ocr
 
@@ -34,7 +36,14 @@ class PdfReader:
         image = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(
             pixmap.height, pixmap.width, pixmap.n
         )
-        result, _ = self._ocr_engine()(image)
+        engine_result = self._ocr_engine()(image)
+        if hasattr(engine_result, "txts"):
+            texts = engine_result.txts
+            return "\n".join(str(text) for text in texts if text)
+        if isinstance(engine_result, tuple):
+            result = engine_result[0]
+        else:
+            result = engine_result
         if not result:
             return ""
         lines: list[str] = []

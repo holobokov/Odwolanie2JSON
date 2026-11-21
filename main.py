@@ -2,14 +2,27 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-from src.pipeline import Pipeline
-
-
 def main() -> int:
+    if sys.version_info < (3, 13):
+        print(
+            "Projekt wymaga Python 3.13+. "
+            "Zainstaluj go albo uruchom Dockerem: docker compose up --build"
+        )
+        return 2
+    try:
+        from dotenv import load_dotenv
+        from src.pipeline import Pipeline
+    except ModuleNotFoundError as exc:
+        print(
+            f"Brakuje zależności: {exc.name}. "
+            "Uruchom: python -m pip install -r requirements.txt "
+            "lub ./run.sh"
+        )
+        return 2
+
     load_dotenv()
     parser = argparse.ArgumentParser(
         description="Konwertuj wielodokumentowe PDF-y odwołań KIO do JSON"
@@ -39,5 +52,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/

@@ -12,6 +12,8 @@ from openai import OpenAI
 
 from .models import DocumentClassConfig, DocumentDTO
 from .normalizer import normalize_document
+from .llm_client import call_llm_with_retry
+from .logging_config import log_intermediate
 
 logger = logging.getLogger(__name__)
 load_dotenv()
@@ -42,9 +44,26 @@ class LLMExtractor:
             f"Instrukcje i schema_spec:\n{schema_json}\n\n"
             "Tekst dokumentu:\n" + text[:30_000]
         )
+        log_intermediate(
+            logger,
+            f"Tekst wybranego dokumentu przekazany do ekstrakcji {document.source_path}",
+            text,
+        )
+        log_intermediate(
+            logger,
+            f"Prompt ekstrakcji LLM {document.source_path}",
+            prompt,
+        )
         try:
+            logger.info(
+                "Wysyłanie ekstrakcji LLM; plik=%s, klasa=%s, model=%s",
+                document.source_path,
+                config.class_id,
+                model,
+            )
             client = OpenAI(api_key=api_key, base_url=base_url)
-            response = client.chat.completions.create(
+            response = call_llm_with_retry(
+                client,
                 model=model,
                 messages=[
                     {
@@ -57,6 +76,11 @@ class LLMExtractor:
                 response_format={"type": "json_object"},
             )
             content = response.choices[0].message.content or "{}"
+            log_intermediate(
+                logger,
+                f"Odpowiedź LLM ekstrakcji {document.source_path}",
+                content,
+            )
             raw = json.loads(content)
             return normalize_document(config.class_id, raw)
         except json.JSONDecodeError as exc:

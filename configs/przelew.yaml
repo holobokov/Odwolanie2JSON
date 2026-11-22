@@ -1,22 +1,32 @@
 class_id: przelew
-description: "Przelew bankowy lub zlecenie przelewu"
+description: "Potwierdzenie wykonania przelewu bankowego, polecenie przelewu lub dowód uiszczenia wpisu od odwołania."
 classification_keywords:
+  - "potwierdzenie przelewu"
+  - "polecenie przelewu"
   - "przelew"
   - "rachunek"
-  - "bank"
+  - "nadawca"
+  - "odbiorca"
+  - "tytuł przelewu"
+  - "data operacji"
   - "kwota"
-  - "tytuł"
-  - "numer transakcji"
 pages_strategy:
-  first_pages: 4
-  include_last: true
+  first_pages: 2
+  include_last: false
 schema_spec:
-  description: "Wyodrębnij dane zlecenia przelewu bankowego."
-  root_fields:
+  instrukcje_domenowe:
+    - "Zwróć WYŁĄCZNIE poprawny obiekt JSON zgodny ze wzorcem poniżej."
+    - "na_rachunek: 26-cyfrowy numer rachunku odbiorcy (beneficjenta / UZP) jako string samych cyfr (usuń 'PL' i wszystkie spacje)."
+    - "z_rachunku: 26-cyfrowy numer rachunku nadawcy (zleceniodawcy) jako string samych cyfr (usuń 'PL' i wszystkie spacje)."
+    - "kwota: kwota przelewu jako liczba zmiennoprzecinkowa float (np. 15000.0 lub 7500.50), bez waluty PLN."
+    - "data_operacji: data wykonania/księgowania przelewu w formacie YYYY-MM-DD lub null."
+    - "numer_transakcji: identyfikator transakcji/operacji bankowej jako string lub null."
+    - "tytul: dokładny tytuł przelewu z dokumentu."
+  wzorzec_json:
     przelew_bankowy:
-      data_operacji: "Data operacji w ISO YYYY-MM-DD lub null"
-      kwota: "Kwota jako liczba zmiennoprzecinkowa"
-      na_rachunek: "Polski IBAN; dokładnie 26 cyfr po usunięciu PL i separatorów"
-      numer_transakcji: "Numer transakcji lub operacji"
-      tytul: "Tytuł przelewu"
-      z_rachunku: "Polski IBAN; dokładnie 26 cyfr po usunięciu PL i separatorów"
+      data_operacji: "YYYY-MM-DD lub null"
+      kwota: "float lub null"
+      na_rachunek: "string (26 cyfr) lub null"
+      numer_transakcji: "string lub null"
+      tytul: "string lub null"
+      z_rachunku: "string (26 cyfr) lub null"

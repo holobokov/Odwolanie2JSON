@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from .models import DocumentClassConfig, DocumentDTO, load_document_configs
+from .llm_client import call_llm_with_retry
+from .logging_config import log_intermediate
 
 logger = logging.getLogger(__name__)
 load_dotenv()
@@ -53,7 +55,8 @@ class DocumentClassifier:
             )[:20_000]
         )
         try:
-            response = client.chat.completions.create(
+            response = call_llm_with_retry(
+                client,
                 model=model,
                 messages=[
                     {"role": "system", "content": "Odpowiadaj wyłącznie poprawnym JSON-em."},
@@ -63,6 +66,11 @@ class DocumentClassifier:
                 response_format={"type": "json_object"},
             )
             payload = json.loads(response.choices[0].message.content or "{}")
+            log_intermediate(
+                logger,
+                f"Odpowiedź LLM klasyfikacji {document.source_path}",
+                response.choices[0].message.content or "{}",
+            )
             candidate = payload.get("class_id")
             return candidate if candidate in {config.class_id for config in self.configs} else None
         except Exception as exc:
@@ -73,7 +81,14 @@ class DocumentClassifier:
         text = document.get_relevant_text(
             int(os.getenv("MAX_FIRST_PAGES", "4")), True
         )
+        log_intermediate(logger, f"Tekst przekazany do klasyfikacji {document.source_path}", text)
         heuristic_id, score = self._heuristic(text)
+        logger.info(
+            "Klasyfikacja heurystyczna %s: wynik=%s, wynik punktowy=%d",
+            document.source_path,
+            heuristic_id or "UNKNOWN",
+            score,
+        )
         if score >= 4:
             return next(config for config in self.configs if config.class_id == heuristic_id)
         llm_id = self._llm_classify(document)

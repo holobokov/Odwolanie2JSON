@@ -48,6 +48,19 @@ Klasa zostanie automatycznie załadowana przy kolejnym uruchomieniu. Interfejs S
 - `src/normalizer.py`: deterministyczne daty, identyfikatory, NIP, KRS, IBAN, TED, BZP i mapowanie czynności.
 - `src/pipeline.py`: rekurencyjna hierarchia wejścia i wyjścia oraz odporność na błędy PDF.
 
+### Logowanie operacji
+
+CLI i interfejs Streamlit zapisują operacje do `logs/odwolania2json.log` z rotacją co 10 MB (maksymalnie 10 kopii). Zawiera zdarzenia takie jak otwarcie PDF, wybór stron, tryb tekstu/OCR, inicjalizacja OCR, klasyfikacja, wywołanie i odpowiedź LLM oraz zapis JSON/YAML.
+Przy `LOG_INTERMEDIATE=true` logowana jest też pełna treść pośrednia: tekst stron PDF, tekst przekazany do klasyfikacji i ekstrakcji, prompt LLM oraz odpowiedź JSON.
+
+Poziom i katalog logów można zmienić zmiennymi `.env`:
+
+```env
+LOG_LEVEL=INFO
+LOG_DIR=./logs
+LOG_INTERMEDIATE=true
+```
+
 ### Ewaluacja
 
 ```bash

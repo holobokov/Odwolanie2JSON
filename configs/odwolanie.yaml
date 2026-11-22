@@ -1,45 +1,61 @@
 class_id: odwolanie
-description: "Odwołanie do Krajowej Izby Odwoławczej"
+description: "Odwołanie wnoszone do Prezesa Krajowej Izby Odwoławczej (KIO) w postępowaniu o udzielenie zamówienia publicznego (nie dotyczy pism przewodnich, wezwań ani przystąpień)."
 classification_keywords:
   - "odwołanie"
+  - "prezesa krajowej izby odwoławczej"
   - "krajowa izba odwoławcza"
-  - "zarzut"
-  - "czynność zamawiającego"
-  - "uZP"
+  - "odwołujący"
+  - "zamawiający"
+  - "zarzuty"
+  - "zarzucam"
 pages_strategy:
   first_pages: 4
   include_last: true
 schema_spec:
-  description: "Wyodrębnij dokładnie strukturę odwołania zgodną z poniższym JSON."
-  root_fields:
+  instrukcje_domenowe:
+    - "Zwróć WYŁĄCZNIE poprawny obiekt JSON zgodny ze wzorcem ponizej. Nie wymyślaj brakujących danych (użyj null)."
+    - "Odwolujacy: zawsze zwracaj listę. Jeżeli odwołanie składa konsorcjum wykonawców, wyodrębnij WYŁĄCZNIE lidera konsorcjum (1 element na liście)."
+    - "przez-pelnomocnika: wpisz 1, jeżeli odwołanie wnosi lub podpisuje pełnomocnik; wpisz 0, jeżeli odwołujący działa samodzielnie. Gdy 0, pola w obiekcie pelnomocnik ustaw na null."
+    - "czynnosc_powod_id: wybierz liczbę całkowitą 1-12 WYŁĄCZNIE na podstawie PIERWSZEGO zarzutu lub pierwszej zaskarżonej czynności:"
+    - "  1 = Decyzja o odrzuceniu oferty"
+    - "  2 = Ogłoszenie wyboru oferty"
+    - "  3 = Decyzja o wykluczeniu wykonawcy"
+    - "  4 = Publikacja specyfikacji warunków zamówienia (SWZ)"
+    - "  5 = Modyfikacja treści SWZ"
+    - "  6 = Odpowiedzi/wyjaśnienia do SWZ"
+    - "  7 = Zaniechanie odrzucenia oferty"
+    - "  8 = Zaniechanie wykluczenia wykonawcy"
+    - "  9 = Decyzja o unieważnieniu postępowania"
+    - "  10 = Zaniechanie unieważnienia postępowania"
+    - "  11 = Opis przedmiotu zamówienia (OPZ)"
+    - "  12 = Projektowane postanowienia umowy"
+    - "Zamawiajacy: lista zamawiających. Jeżeli jest tylko jeden zamawiający, prowadzacy_postepowanie MUSI wynosić null. Jeżeli jest kilku zamawiających, podmiot prowadzący postępowanie ma 1, a pozostali 0."
+    - "Numery NIP, KRS, REGON zapisuj jako ciągi samych cyfr (bez myślników, spacji i prefiksu PL)."
+  wzorzec_json:
     OdwolanieKIO:
-      data: "Data sporządzenia odwołania; YYYY-MM-DD lub null"
-      czynnosc_dzien: "Dzień dokonania pierwszej/zgłoszonej czynności zamawiającego; YYYY-MM-DD lub null"
-      czynnosc_powod_id: "Liczba całkowita 1-12 określona WYŁĄCZNIE na podstawie pierwszego zarzutu"
-      czynnosc_opis: "Nie wyznaczaj tego pola; zostanie ustawione deterministycznie po wyborze ID"
-      miejscowosc: "Miejscowość z treści odwołania"
+      data: "YYYY-MM-DD lub null (data sporządzenia odwołania)"
+      czynnosc_dzien: "YYYY-MM-DD lub null (data dokonania zaskarżonej czynności lub powzięcia wiadomości o niej)"
+      czynnosc_powod_id: "int (1-12) lub null"
+      czynnosc_opis: null
+      miejscowosc: "string lub null (miejscowość z nagłówka odwołania)"
     Odwolujacy:
-      instruction: "Lista; dla konsorcjum wyodrębnij tylko lidera konsorcjum"
-      fields:
-        krs: "10 cyfr bez prefiksów i znaków"
-        nazwa: "Nazwa wykonawcy"
-        nip: "10 cyfr"
-        regon: "9 lub 14 cyfr"
-        przez-pelnomocnika: "1 gdy odwołanie wnosi pełnomocnik, inaczej 0"
+      - krs: "string (10 cyfr) lub null"
+        nazwa: "string lub null (pełna nazwa wykonawcy / lidera konsorcjum)"
+        nip: "string (10 cyfr) lub null"
+        regon: "string (9 lub 14 cyfr) lub null"
+        przez-pelnomocnika: "int (1 lub 0)"
         pelnomocnik:
-          imie_nazwisko: "Imię i nazwisko pełnomocnika"
-          nazwa: "Nazwa kancelarii lub spółki pełnomocnika"
-          mail: "Adres e-mail"
+          imie_nazwisko: "string lub null"
+          nazwa: "string lub null (nazwa kancelarii lub firmy pełnomocnika)"
+          mail: "string lub null"
     Zamawiajacy:
-      instruction: "Jeżeli jest więcej niż jeden zamawiający, pierwszy/prowadzący ma 1, pozostali 0"
-      fields:
-        krs: "10 cyfr"
-        nazwa: "Nazwa zamawiającego"
-        nip: "10 cyfr"
-        regon: "9 lub 14 cyfr"
-        prowadzacy_postepowanie: "1, 0 lub null; null przy jednym zamawiającym"
+      - krs: "string (10 cyfr) lub null"
+        nazwa: "string lub null"
+        nip: "string (10 cyfr) lub null"
+        regon: "string (9 lub 14 cyfr) lub null"
+        prowadzacy_postepowanie: "int (1 lub 0) lub null"
     ZamowieniePubliczne:
-      numer_bzp: "Numer w postaci YYYY/BZP ######## lub YYYY/BZP ########/##"
-      numer_postepowania: "Numer własny postępowania"
-      numer_ted: "Numer w postaci NNNNNN-YYYY"
-      tytul: "Tytuł zamówienia"
+      numer_bzp: "string w formacie 'YYYY/BZP ########' lub 'YYYY/BZP ########/##' albo null"
+      numer_postepowania: "string lub null (znak sprawy / numer referencyjny zamawiającego)"
+      numer_ted: "string w formacie 'NNNNNN-YYYY' lub null"
+      tytul: "string lub null (nazwa/przedmiot zamówienia)"

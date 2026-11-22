@@ -104,10 +104,10 @@ def normalize_bzp(value: Any) -> str | None:
         if match and number_match:
             suffix_match = re.search(r"/(\d{2})(?!\d)", text)
             suffix = f"/{suffix_match.group(1)}" if suffix_match else ""
-            return f"{match.group(1)}/BZP {number_match.group(0)}{suffix}"
+            return f"{match.group(1)}/BZP{number_match.group(0)}{suffix}"
         return None
     suffix = f"/{match.group(3)}" if match.group(3) else ""
-    return f"{match.group(1)}/BZP {match.group(2)}{suffix}"
+    return f"{match.group(1)}/BZP{match.group(2)}{suffix}"
 
 
 def _nullable_int(value: Any, allowed: tuple[int, ...]) -> int | None:
@@ -169,7 +169,7 @@ def normalize_document(class_id: str, raw: dict[str, Any]) -> dict[str, Any]:
                 "regon": normalize_digits(item.get("regon"), (9, 14)),
                 "przez-pelnomocnika": 1 if item.get("przez-pelnomocnika") in (1, "1", True) else 0,
                 "pelnomocnik": {
-                    "imie_nazwisko": pien.get("imie_nazwisko") or None,
+                    "imie_nazwisko": pien.get("imie_nazwisko").split(",")[0].strip() if pien.get("imie_nazwisko") else None,
                     "nazwa": pien.get("nazwa") or None,
                     "mail": pien.get("mail") or None,
                 },

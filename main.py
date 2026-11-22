@@ -5,6 +5,8 @@ import logging
 import sys
 from pathlib import Path
 
+from src.logging_config import configure_logging
+
 def main() -> int:
     if sys.version_info < (3, 13):
         print(
@@ -33,10 +35,8 @@ def main() -> int:
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=getattr(logging, args.log_level.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    log_file = configure_logging(args.log_level)
+    logging.getLogger(__name__).info("Uruchomiono CLI; plik logu: %s", log_file)
     processed, successful = Pipeline(
         input_directory=Path(args.input),
         output_directory=Path(args.output),

@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from .classifier import DocumentClassifier
 from .extractor import LLMExtractor
 from .reader import PdfReader
+from .logging_config import log_intermediate
 
 logger = logging.getLogger(__name__)
 load_dotenv()
@@ -36,11 +37,20 @@ class Pipeline:
     def process_file(self, pdf_path: str | Path) -> dict:
         pdf_path = Path(pdf_path)
         try:
+            logger.info("Rozpoczęto przetwarzanie pliku: %s", pdf_path)
             document = self.reader.read(pdf_path)
             config = self.classifier.classify(document)
             if config is None:
+                logger.info("Brak klasy dokumentu, zapisuję {}; plik: %s", pdf_path)
                 return {}
-            return self.extractor.extract(document, config)
+            result = self.extractor.extract(document, config)
+            logger.info("Ekstrakcja zakończona dla %s jako klasa %s", pdf_path, config.class_id)
+            log_intermediate(
+                logger,
+                f"Kanoniczny JSON po normalizacji {pdf_path}",
+                result,
+            )
+            return result
         except Exception as exc:
             logger.exception("Failed to process %s: %s", pdf_path, exc)
             return {}
@@ -48,6 +58,9 @@ class Pipeline:
     def run(self) -> tuple[int, int]:
         processed = 0
         successful = 0
+        logger.info("Skanowanie katalogu wejściowego: %s", self.input_directory)
+        pdf_count = sum(1 for _ in self._pdf_files())
+        logger.info("Znaleziono %d plików PDF", pdf_count)
         for pdf_path in self._pdf_files():
             processed += 1
             relative = pdf_path.relative_to(self.input_directory)
@@ -58,7 +71,7 @@ class Pipeline:
                 with destination.open("w", encoding="utf-8") as handle:
                     json.dump(result, handle, ensure_ascii=False, indent=2)
                 successful += 1
-                logger.info("Wrote %s", destination)
+                logger.info("Zapisano JSON: %s", destination)
             except Exception as exc:
                 logger.exception("Could not write %s: %s", destination, exc)
         return processed, successful

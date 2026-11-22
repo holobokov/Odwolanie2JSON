@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+import logging
 
 import streamlit as st
 import yaml
@@ -9,6 +10,11 @@ import yaml
 from src.classifier import DocumentClassifier
 from src.extractor import LLMExtractor
 from src.reader import PdfReader
+from src.logging_config import configure_logging
+
+log_file = configure_logging()
+logger = logging.getLogger(__name__)
+logger.info("Uruchomiono interfejs Streamlit; plik logu: %s", log_file)
 
 
 st.set_page_config(page_title="Odwołania2JSON", layout="wide")
@@ -19,25 +25,35 @@ tab_extract, tab_config = st.tabs(["Ekstrakcja PDF", "Nowa klasa YAML"])
 with tab_extract:
     uploaded = st.file_uploader("Wybierz PDF", type=["pdf"])
     if uploaded:
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-            tmp.write(uploaded.getvalue())
-            tmp_path = Path(tmp.name)
-        document = PdfReader().read(tmp_path)
-        config = DocumentClassifier("configs").classify(document)
-        left, right = st.columns(2)
-        with left:
-            st.subheader("Diagnostyka stron")
-            for page in document.pages:
-                with st.expander(f"Strona {page.number} · {page.type.value} · {page.char_count} znaków"):
-                    st.text(page.text or "(brak tekstu)")
-        with right:
-            st.subheader("Wynik ekstrakcji")
-            if config is None:
-                st.json({})
-            else:
-                st.json(LLMExtractor("configs").extract(document, config))
-                st.caption(f"Klasa: {config.class_id}")
-        tmp_path.unlink(missing_ok=True)
+        logger.info("Przesłano PDF w Streamlit: %s", uploaded.name)
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                tmp.write(uploaded.getvalue())
+                tmp_path = Path(tmp.name)
+            logger.info("PDF zapisano tymczasowo: %s", tmp_path)
+            document = PdfReader().read(tmp_path)
+            config = DocumentClassifier("configs").classify(document)
+            left, right = st.columns(2)
+            with left:
+                st.subheader("Diagnostyka stron")
+                for page in document.pages:
+                    with st.expander(f"Strona {page.number} · {page.type.value} · {page.char_count} znaków"):
+                        st.text(page.text or "(brak tekstu)")
+            with right:
+                st.subheader("Wynik ekstrakcji")
+                if config is None:
+                    st.json({})
+                else:
+                    st.json(LLMExtractor("configs").extract(document, config))
+                    st.caption(f"Klasa: {config.class_id}")
+            logger.info("Przetwarzanie uploadu PDF zakończono: %s", uploaded.name)
+        except Exception as exc:
+            logger.exception("Błąd przetwarzania uploadu PDF %s", uploaded.name)
+            st.error(f"Błąd przetwarzania: {exc}")
+        finally:
+            if tmp_path is not None:
+                tmp_path.unlink(missing_ok=True)
 
 with tab_config:
     st.subheader("Dodaj klasę dokumentu przez YAML")
@@ -69,6 +85,7 @@ with tab_config:
             target.parent.mkdir(parents=True, exist_ok=True)
             with target.open("w", encoding="utf-8") as handle:
                 yaml.safe_dump(config, handle, allow_unicode=True, sort_keys=False)
+            logger.info("Zapisano nową konfigurację klasy YAML: %s", target)
             st.success(f"Zapisano {target}")
         except yaml.YAMLError as exc:
             st.error(f"Błąd YAML: {exc}")

@@ -1,30 +1,34 @@
 class_id: pelnomocnictwo
-description: "Pełnomocnictwo procesowe lub ogólne"
+description: "Dokument pełnomocnictwa lub upoważnienia do reprezentowania wykonawcy lub zamawiającego przed Krajową Izbą Odwoławczą lub w postępowaniu."
 classification_keywords:
   - "pełnomocnictwo"
   - "mocodawca"
   - "pełnomocnik"
+  - "upoważniam"
   - "upoważnia"
+  - "ustanawiam"
   - "ustanawia"
-  - "mianownik"
+  - "udziela pełnomocnictwa"
 pages_strategy:
-  first_pages: 4
+  first_pages: 3
   include_last: true
 schema_spec:
-  description: "Wyodrębnij dane mocodawców, podpisujących i pełnomocników."
-  root_fields:
+  instrukcje_domenowe:
+    - "Zwróć WYŁĄCZNIE poprawny obiekt JSON zgodny ze wzorcem poniżej."
+    - "mocodawca: lista podmiotów udzielających pełnomocnictwa. Dla spółek, instytucji i jednostek organizacyjnych ustaw typ='osoba_prawna', wypełnij nazwa, nip, krs, a imie_nazwisko ustaw na null. Dla osób fizycznych / JDG bez nazwy spółki ustaw typ='osoba_fizyczna' i wypełnij imie_nazwisko."
+    - "podpisujacy: lista osób fizycznych, które podpisały pełnomocnictwo w imieniu mocodawcy (np. członkowie zarządu, prokurent, właściciel). Zawsze zwracaj listę obiektów [{\"imie_nazwisko\": \"...\"}]."
+    - "pelnomocnicy: lista ustanowionych pełnomocników. KRYTYCZNE: imie_nazwisko każdego pełnomocnika MUSISZ odmienić do polskiego mianownika (np. 'Janowi Kowalskiemu' -> 'Jan Kowalski', 'Krystynie Nowak' -> 'Krystyna Nowak')."
+    - "pesel: 11-cyfrowy numer PESEL pełnomocnika jako liczba całkowita (int) lub null, jeśli brak w tekście."
+  wzorzec_json:
     mocodawca:
-      instruction: "Lista wszystkich mocodawców"
-      data:
-        imie_nazwisko: "Imię i nazwisko osoby fizycznej lub null"
-        krs: "10 cyfr lub null"
-        nazwa: "Nazwa osoby prawnej lub null"
-        nip: "10 cyfr lub null"
-        typ: "osoba_prawna lub osoba_fizyczna"
-      podpisujacy:
-        imie_nazwisko: "Obowiązkowo imię i nazwisko podpisującego"
+      - data:
+          imie_nazwisko: "string lub null"
+          krs: "string (10 cyfr) lub null"
+          nazwa: "string lub null"
+          nip: "string (10 cyfr) lub null"
+          typ: "osoba_prawna lub osoba_fizyczna"
+        podpisujacy:
+          - imie_nazwisko: "string (imię i nazwisko osoby podpisującej w mianowniku)"
     pelnomocnicy:
-      instruction: "Lista pełnomocników; imię i nazwisko w mianowniku"
-      imie_nazwisko: "Imię i nazwisko w mianowniku"
-      pesel: "Liczba całkowita lub null"
-
+      - imie_nazwisko: "string (imię i nazwisko pełnomocnika w mianowniku)"
+        pesel: "int (11 cyfr) lub null"

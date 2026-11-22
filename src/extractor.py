@@ -6,14 +6,12 @@ import os
 from pathlib import Path
 from typing import Any
 
-import yaml
 from dotenv import load_dotenv
-from openai import OpenAI
 
+from .llm_client import call_llm_with_retry, get_client, parse_json_response
+from .logging_config import log_intermediate
 from .models import DocumentClassConfig, DocumentDTO
 from .normalizer import normalize_document
-from .llm_client import call_llm_with_retry
-from .logging_config import log_intermediate
 
 logger = logging.getLogger(__name__)
 load_dotenv()
@@ -38,53 +36,40 @@ class LLMExtractor:
         )
         prompt = (
             "Wypakuj dane z polskiego dokumentu zamówień publicznych. "
-            "Nie zgaduj wartości nieobecnych w tekście. "
-            "Zwróć WYŁĄCZNIE jeden poprawny obiekt JSON o wymaganym kluczu głównym.\n\n"
+            "Nie zgaduj brakujących ani zamazanych danych (zwróć null, nigdy '***' ani '[REDACTED]'). "
+            "Zwróć WYŁĄCZNIE jeden poprawny obiekt JSON.\n\n"
             f"Kategoria: {config.class_id} — {config.description}\n"
             f"Instrukcje i schema_spec:\n{schema_json}\n\n"
-            "Tekst dokumentu:\n" + text[:30_000]
+            "Tekst dokumentu:\n" + text[:24_000]
         )
-        log_intermediate(
-            logger,
-            f"Tekst wybranego dokumentu przekazany do ekstrakcji {document.source_path}",
-            text,
-        )
-        log_intermediate(
-            logger,
-            f"Prompt ekstrakcji LLM {document.source_path}",
-            prompt,
-        )
+        log_intermediate(logger, f"Tekst do ekstrakcji {document.source_path}", text)
+
         try:
-            logger.info(
-                "Wysyłanie ekstrakcji LLM; plik=%s, klasa=%s, model=%s",
-                document.source_path,
-                config.class_id,
-                model,
-            )
-            client = OpenAI(api_key=api_key, base_url=base_url)
+            client = get_client(api_key, base_url)
+            messages = [
+                {"role": "system", "content": "Ekstraktor danych. Zwracaj wyłącznie poprawny JSON zgodny ze schema_spec."},
+                {"role": "user", "content": prompt},
+            ]
             response = call_llm_with_retry(
                 client,
                 model=model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Ekstraktor danych. Zwracaj tylko JSON zgodny ze schema_spec.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
+                messages=messages,
                 temperature=0,
                 response_format={"type": "json_object"},
             )
             content = response.choices[0].message.content or "{}"
-            log_intermediate(
-                logger,
-                f"Odpowiedź LLM ekstrakcji {document.source_path}",
-                content,
-            )
-            raw = json.loads(content)
+            log_intermediate(logger, f"Odpowiedź LLM ekstrakcji {document.source_path}", content)
+            try:
+                raw = parse_json_response(content)
+            except json.JSONDecodeError:
+                # One repair retry
+                messages.append({"role": "assistant", "content": content})
+                messages.append({"role": "user", "content": "To nie był poprawny JSON. Zwróć WYŁĄCZNIE poprawny obiekt JSON bez komentarzy."})
+                response = call_llm_with_retry(
+                    client, model=model, messages=messages, temperature=0, response_format={"type": "json_object"}
+                )
+                raw = parse_json_response(response.choices[0].message.content)
             return normalize_document(config.class_id, raw)
-        except json.JSONDecodeError as exc:
-            logger.error("LLM returned invalid JSON for %s: %s", document.source_path, exc)
         except Exception as exc:
             logger.error("LLM extraction failed for %s: %s", document.source_path, exc)
-        return normalize_document(config.class_id, {})
+            return normalize_document(config.class_id, {})

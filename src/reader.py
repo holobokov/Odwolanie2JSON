@@ -2,14 +2,27 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from pathlib import Path
 
-import fitz
+import numpy as np
+import pypdfium2 as pdfium
+import pytesseract
+from PIL import Image, ImageOps
 
-from .models import DocumentDTO, PageDTO, PageType
 from .logging_config import log_intermediate
+from .models import DocumentDTO, PageDTO, PageType
 
 logger = logging.getLogger(__name__)
+
+
+def _looks_garbled_or_empty(text: str, min_alnum: int = 50) -> bool:
+    if not text or "(cid:" in text.lower():
+        return True
+    alnum = sum(ch.isalnum() for ch in text)
+    if alnum < min_alnum:
+        return True
+    return (text.count("\ufffd") / max(len(text), 1)) > 0.05
 
 
 class PdfReader:
@@ -21,94 +34,99 @@ class PdfReader:
             else int(os.getenv("MAX_FIRST_PAGES", "4"))
         )
         self._ocr = None
+        self._has_tess = self._check_tesseract_pol()
+
+    @staticmethod
+    def _check_tesseract_pol() -> bool:
+        if shutil.which("tesseract") is None:
+            return False
+        try:
+            return "pol" in pytesseract.get_languages(config="")
+        except Exception:
+            return False
 
     def _ocr_engine(self):
         if self._ocr is None:
-            logger.info("Inicjalizacja silnika OCR")
+            logger.info("Inicjalizacja silnika RapidOCR (Polish/Latin)")
             try:
-                from rapidocr_onnxruntime import RapidOCR
-                logger.info("Załadowano rapidocr-onnxruntime")
+                from rapidocr import EngineType, LangRec, OCRVersion, RapidOCR
+
+                try:
+                    self._ocr = RapidOCR(
+                        params={
+                            "Rec.lang_type": LangRec.LATIN,
+                            "Rec.engine_type": EngineType.ONNXRUNTIME,
+                            "Rec.ocr_version": OCRVersion.PPOCRV4,
+                            "Det.ocr_version": OCRVersion.PPOCRV4,
+                        }
+                    )
+                except Exception as exc:
+                    logger.warning("Fallback do domyślnego RapidOCR: %s", exc)
+                    self._ocr = RapidOCR()
             except ImportError:
-                from rapidocr import RapidOCR
-                logger.info("Załadowano rapidocr")
-            self._ocr = RapidOCR()
+                from rapidocr_onnxruntime import RapidOCR
+                self._ocr = RapidOCR()
         return self._ocr
 
-    def _ocr_pixmap(self, pixmap: fitz.Pixmap) -> str:
-        import numpy as np
+    def _ocr_image(self, pil_img: Image.Image) -> str:
+        if self._has_tess:
+            gray = ImageOps.grayscale(pil_img)
+            return pytesseract.image_to_string(gray, lang="pol+eng", config="--psm 4").strip()
 
-        image = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(
-            pixmap.height, pixmap.width, pixmap.n
-        )
-        engine_result = self._ocr_engine()(image)
+        arr = np.array(pil_img.convert("RGB"))
+        engine_result = self._ocr_engine()(arr)
         if hasattr(engine_result, "txts"):
             texts = engine_result.txts
-            return "\n".join(str(text) for text in texts if text)
-        if isinstance(engine_result, tuple):
-            result = engine_result[0]
-        else:
-            result = engine_result
+            return "\n".join(str(t) for t in (texts or []) if t).strip()
+        result = engine_result[0] if isinstance(engine_result, tuple) else engine_result
         if not result:
             return ""
-        lines: list[str] = []
+        lines = []
         for item in result:
-            if isinstance(item, (list, tuple)):
-                if len(item) >= 2:
-                    text = item[1]
-                else:
-                    continue
-            elif isinstance(item, str):
-                text = item
-            else:
-                continue
-            if text:
-                lines.append(str(text))
-        return "\n".join(lines)
+            if isinstance(item, (list, tuple)) and len(item) >= 2 and item[1]:
+                lines.append(str(item[1]))
+            elif isinstance(item, str) and item:
+                lines.append(item)
+        return "\n".join(lines).strip()
 
     def read(self, pdf_path: str | Path) -> DocumentDTO:
         path = Path(pdf_path)
         pages: list[PageDTO] = []
         logger.info("Otwarto PDF do odczytu: %s", path)
-        with fitz.open(path) as document:
-            logger.info(
-                "Plik PDF %s ma %d stron; analizowane strony: pierwsze %d i ostatnia",
-                path,
-                document.page_count,
-                self.max_first_pages,
-            )
-            indices = set(range(min(self.max_first_pages, document.page_count)))
-            if document.page_count:
-                indices.add(document.page_count - 1)
+        pdf = pdfium.PdfDocument(str(path))
+        try:
+            total = len(pdf)
+            indices = set(range(min(self.max_first_pages, total)))
+            if total > 0:
+                indices.add(total - 1)
+            scale = self.dpi / 72.0
+
             for index in sorted(indices):
-                page = document.load_page(index)
-                text = page.get_text("text").strip()
-                char_count = len(text)
-                if char_count >= 80:
-                    page_type = PageType.NATIVE_TEXT
-                    logger.info("Strona %d: tekst natywny, %d znaków", index + 1, char_count)
-                elif not text:
-                    page_type = PageType.EMPTY
-                    logger.info("Strona %d: brak tekstu natywnego, uruchamiam OCR", index + 1)
-                    # Render blank or image-only pages at 220 DPI for OCR.
-                    pixmap = page.get_pixmap(matrix=fitz.Matrix(self.dpi / 72, self.dpi / 72), alpha=False)
-                    logger.info("Strona %d: renderowanie OCR w %d DPI", index + 1, self.dpi)
-                    text = self._ocr_pixmap(pixmap).strip()
-                    char_count = len(text)
-                    if text:
-                        page_type = PageType.SCANNED_OCR
-                        logger.info("Strona %d: OCR zakończony, %d znaków", index + 1, char_count)
-                else:
-                    page_type = PageType.SCANNED_OCR
-                    logger.info("Strona %d: mało tekstu, uruchamiam OCR", index + 1)
-                    pixmap = page.get_pixmap(matrix=fitz.Matrix(self.dpi / 72, self.dpi / 72), alpha=False)
-                    text = self._ocr_pixmap(pixmap).strip()
-                    char_count = len(text)
-                    logger.info("Strona %d: OCR zakończony, %d znaków", index + 1, char_count)
-                pages.append(PageDTO(number=index + 1, type=page_type, text=text, char_count=char_count))
-                log_intermediate(
-                    logger,
-                    f"Tekst pośredni PDF {path}, strona {index + 1}",
-                    text,
-                )
-        logger.info("Zamknięto PDF i utworzono DocumentDTO: %s", path)
+                page = pdf[index]
+                textpage = None
+                bitmap = None
+                try:
+                    textpage = page.get_textpage()
+                    text = textpage.get_text_bounded().strip()
+                    if not _looks_garbled_or_empty(text):
+                        page_type = PageType.NATIVE_TEXT
+                        logger.info("Strona %d: tekst natywny, %d znaków", index + 1, len(text))
+                    else:
+                        bitmap = page.render(scale=scale)
+                        pil_img = bitmap.to_pil()
+                        text = self._ocr_image(pil_img)
+                        page_type = PageType.SCANNED_OCR if text else PageType.EMPTY
+                        logger.info("Strona %d: OCR (%s), %d znaków", index + 1, "tesseract" if self._has_tess else "rapidocr", len(text))
+                finally:
+                    if bitmap is not None:
+                        bitmap.close()
+                    if textpage is not None:
+                        textpage.close()
+                    page.close()
+
+                pages.append(PageDTO(number=index + 1, type=page_type, text=text, char_count=len(text)))
+                log_intermediate(logger, f"Tekst pośredni PDF {path}, strona {index + 1}", text)
+        finally:
+            pdf.close()
+
         return DocumentDTO(source_path=str(path), pages=pages)

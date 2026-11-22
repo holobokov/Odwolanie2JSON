@@ -21,19 +21,30 @@ CZYNNOSC_LOOKUP: dict[int, str] = {
 }
 
 _MONTHS = {
-    "stycznia": 1, "lutego": 2, "marca": 3, "kwietnia": 4, "maja": 5,
-    "czerwca": 6, "lipca": 7, "sierpnia": 8, "września": 9,
-    "października": 10, "listopada": 11, "grudnia": 12,
+    "stycznia": 1, "styczeń": 1, "lutego": 2, "luty": 2, "marca": 3, "marzec": 3,
+    "kwietnia": 4, "kwiecień": 4, "maja": 5, "maj": 5, "czerwca": 6, "czerwiec": 6,
+    "lipca": 7, "lipiec": 7, "sierpnia": 8, "sierpień": 8, "września": 9, "wrzesień": 9,
+    "października": 10, "październik": 10, "listopada": 11, "listopad": 11,
+    "grudnia": 12, "grudzień": 12,
 }
+
+_PLACEHOLDERS = {"null", "none", "n/a", "brak", "nie dotyczy", "redacted", "[redacted]", "-"}
+
+
+def _clean_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = " ".join(str(value).strip().split())
+    if not text or text.casefold() in _PLACEHOLDERS or re.fullmatch(r"[*█■_xX\-]+", text):
+        return None
+    return text
 
 
 def normalize_date(value: Any) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip().lower().replace("\xa0", " ")
+    text = _clean_str(value)
     if not text:
         return None
-    text = re.sub(r"\br\.", "", text).strip()
+    text = re.sub(r"\br\.?$", "", text.lower().replace("\xa0", " ")).strip()
     match = re.fullmatch(r"(\d{4})-(\d{1,2})-(\d{1,2})", text)
     if match:
         year, month, day = map(int, match.groups())
@@ -56,59 +67,54 @@ def normalize_date(value: Any) -> str | None:
         return None
 
 
-def normalize_digits(value: Any, allowed_lengths: tuple[int, ...]) -> str | None:
-    if value is None:
+def normalize_digits(value: Any, allowed_lengths: tuple[int, ...], zero_pad: int | None = None) -> str | None:
+    cleaned = _clean_str(value)
+    if not cleaned:
         return None
-    text = str(value).upper().strip()
-    text = re.sub(r"\s+", "", text)
-    text = re.sub(r"[-./]", "", text)
+    text = re.sub(r"[\s\-./]+", "", cleaned.upper())
     text = re.sub(r"^PL", "", text)
     digits = re.sub(r"\D", "", text)
+    if zero_pad and 0 < len(digits) <= zero_pad:
+        digits = digits.zfill(zero_pad)
     return digits if len(digits) in allowed_lengths else None
 
 
-def normalize_identifier(value: Any) -> str | None:
-    if value is None:
+def normalize_account(value: Any) -> str | None:
+    cleaned = _clean_str(value)
+    if not cleaned:
         return None
-    text = str(value).strip()
+    text = re.sub(r"[\s\-]+", "", cleaned.upper())
+    if text.startswith("PL"):
+        text = text[2:]
     digits = re.sub(r"\D", "", text)
-    return digits or None
+    return digits if 16 <= len(digits) <= 28 else None
 
 
 def normalize_ted(value: Any) -> str | None:
-    if value is None:
+    cleaned = _clean_str(value)
+    if not cleaned:
         return None
-    text = str(value).upper()
-    match = re.search(r"(\d{6})\s*[-/]\s*(20\d{2}|\d{4})", text)
-    if match:
-        return f"{match.group(1)}-{match.group(2)}"
-    match = re.search(r"\b(\d{4})\s*/\s*S\s+\d+-(\d{6})\b", text)
+    text = cleaned.upper()
+    match = re.search(r"\b(\d{4})\s*/\s*S\s*\d+\s*-\s*(\d{5,8})\b", text)
     if match:
         return f"{match.group(2)}-{match.group(1)}"
-    match = re.search(r"\b(\d{6})\b", text)
+    match = re.search(r"\b(\d{5,8})\s*[-/]\s*(20\d{2})\b", text)
     if match:
-        year_match = re.search(r"\b(20\d{2}|\d{4})\b", text)
-        if year_match:
-            return f"{match.group(1)}-{year_match.group(1)}"
+        return f"{match.group(1)}-{match.group(2)}"
     return None
 
 
 def normalize_bzp(value: Any) -> str | None:
-    if value is None:
+    cleaned = _clean_str(value)
+    if not cleaned:
         return None
-    text = str(value).upper().replace(" ", "")
+    text = cleaned.upper().replace(" ", "")
     match = re.search(r"(20\d{2}|19\d{2})/?BZP/?(\d{8})(?:/?(\d{2}))?", text)
     if not match:
-        match = re.search(r"(20\d{2}|19\d{2})", text)
-        number_match = re.search(r"\d{8}", text)
-        if match and number_match:
-            suffix_match = re.search(r"/(\d{2})(?!\d)", text)
-            suffix = f"/{suffix_match.group(1)}" if suffix_match else ""
-            return f"{match.group(1)}/BZP{number_match.group(0)}{suffix}"
         return None
     suffix = f"/{match.group(3)}" if match.group(3) else ""
+    # NOTE: Check dane/przyklad_* whether expected format is '/BZP ' (with space) or '/BZP' (no space)!
     return f"{match.group(1)}/BZP{match.group(2)}{suffix}"
-
 
 def _nullable_int(value: Any, allowed: tuple[int, ...]) -> int | None:
     try:
@@ -119,32 +125,45 @@ def _nullable_int(value: Any, allowed: tuple[int, ...]) -> int | None:
 
 
 def _nullable_pesel(value: Any) -> int | None:
-    if value is None:
+    cleaned = _clean_str(value)
+    if not cleaned:
         return None
-    digits = re.sub(r"\D", "", str(value))
-    if len(digits) != 11:
-        return None
-    try:
-        return int(digits)
-    except ValueError:
-        return None
+    digits = re.sub(r"\D", "", cleaned)
+    return int(digits) if len(digits) == 11 else None
 
 
 def _nullable_float(value: Any) -> float | None:
-    if value is None:
+    if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return float(value)
-    text = str(value).strip().replace(" ", "").replace("\xa0", "")
-    text = text.replace(",", ".")
-    match = re.search(r"-?\d+(?:\.\d+)?", text)
-    return float(match.group(0)) if match else None
+        return round(float(value), 2)
+    cleaned = _clean_str(value)
+    if not cleaned:
+        return None
+    s = re.sub(r"(zł|zl|pln)", "", cleaned, flags=re.I).replace(" ", "")
+    if "," in s and "." in s:
+        s = s.replace(".", "").replace(",", ".") if s.rfind(",") > s.rfind(".") else s.replace(",", "")
+    elif "," in s:
+        s = s.replace(",", ".")
+    match = re.search(r"-?\d+(?:\.\d+)?", s)
+    return round(float(match.group(0)), 2) if match else None
+
+
+def _clean_generic(value: Any) -> Any:
+    """Generic normalizer so any newly added YAML document class works without code edits."""
+    if isinstance(value, dict):
+        return {k: _clean_generic(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_clean_generic(v) for v in value]
+    if isinstance(value, str):
+        return _clean_str(value)
+    return value
 
 
 def normalize_document(class_id: str, raw: dict[str, Any]) -> dict[str, Any]:
     data = raw if isinstance(raw, dict) else {}
     if class_id == "odwolanie":
-        root = data.get("OdwolanieKIO") or {}
+        root = data.get("OdwolanieKIO") if isinstance(data.get("OdwolanieKIO"), dict) else {}
         action_id = _nullable_int(root.get("czynnosc_powod_id"), tuple(CZYNNOSC_LOOKUP))
         result: dict[str, Any] = {
             "OdwolanieKIO": {
@@ -152,7 +171,7 @@ def normalize_document(class_id: str, raw: dict[str, Any]) -> dict[str, Any]:
                 "czynnosc_dzien": normalize_date(root.get("czynnosc_dzien")),
                 "czynnosc_powod_id": action_id,
                 "czynnosc_opis": CZYNNOSC_LOOKUP.get(action_id) if action_id else None,
-                "miejscowosc": root.get("miejscowosc") if root.get("miejscowosc") else None,
+                "miejscowosc": _clean_str(root.get("miejscowosc")),
             },
             "Odwolujacy": [],
             "Zamawiajacy": [],
@@ -161,57 +180,61 @@ def normalize_document(class_id: str, raw: dict[str, Any]) -> dict[str, Any]:
         for item in data.get("Odwolujacy") or []:
             if not isinstance(item, dict):
                 continue
-            pien = item.get("pelnomocnik") or {}
+            pien = item.get("pelnomocnik") if isinstance(item.get("pelnomocnik"), dict) else {}
+            pien_name = _clean_str(pien.get("imie_nazwisko"))
+            if pien_name:
+                pien_name = pien_name.split(",")[0].strip()
             result["Odwolujacy"].append({
-                "krs": normalize_digits(item.get("krs"), (10,)),
-                "nazwa": item.get("nazwa") or None,
+                "krs": normalize_digits(item.get("krs"), (10,), zero_pad=10),
+                "nazwa": _clean_str(item.get("nazwa")),
                 "nip": normalize_digits(item.get("nip"), (10,)),
                 "regon": normalize_digits(item.get("regon"), (9, 14)),
                 "przez-pelnomocnika": 1 if item.get("przez-pelnomocnika") in (1, "1", True) else 0,
                 "pelnomocnik": {
-                    "imie_nazwisko": pien.get("imie_nazwisko").split(",")[0].strip() if pien.get("imie_nazwisko") else None,
-                    "nazwa": pien.get("nazwa") or None,
-                    "mail": pien.get("mail") or None,
+                    "imie_nazwisko": pien_name,
+                    "nazwa": _clean_str(pien.get("nazwa")),
+                    "mail": _clean_str(pien.get("mail")),
                 },
             })
-        authorities = data.get("Zamawiajacy") or []
+        authorities = [a for a in (data.get("Zamawiajacy") or []) if isinstance(a, dict)]
         multiple = len(authorities) > 1
         for item in authorities:
-            if not isinstance(item, dict):
-                continue
             lead = _nullable_int(item.get("prowadzacy_postepowanie"), (0, 1))
             result["Zamawiajacy"].append({
-                "krs": normalize_digits(item.get("krs"), (10,)),
-                "nazwa": item.get("nazwa") or None,
+                "krs": normalize_digits(item.get("krs"), (10,), zero_pad=10),
+                "nazwa": _clean_str(item.get("nazwa")),
                 "nip": normalize_digits(item.get("nip"), (10,)),
                 "regon": normalize_digits(item.get("regon"), (9, 14)),
                 "prowadzacy_postepowanie": lead if multiple else None,
             })
-        procurement = data.get("ZamowieniePubliczne") or {}
+        procurement = data.get("ZamowieniePubliczne") if isinstance(data.get("ZamowieniePubliczne"), dict) else {}
         result["ZamowieniePubliczne"] = {
             "numer_bzp": normalize_bzp(procurement.get("numer_bzp")),
-            "numer_postepowania": procurement.get("numer_postepowania") or None,
+            "numer_postepowania": _clean_str(procurement.get("numer_postepowania")),
             "numer_ted": normalize_ted(procurement.get("numer_ted")),
-            "tytul": procurement.get("tytul") or None,
+            "tytul": _clean_str(procurement.get("tytul")),
         }
         return result
+
     if class_id == "pelnomocnictwo":
         result = {"mocodawca": [], "pelnomocnicy": []}
         for item in data.get("mocodawca") or []:
             if not isinstance(item, dict):
                 continue
-            body = item.get("data") or {}
-            signers: list[dict[str, str]] = []
-            for signer in item.get("podpisujacy") or []:
-                if isinstance(signer, dict) and signer.get("imie_nazwisko"):
-                    signers.append({"imie_nazwisko": str(signer["imie_nazwisko"])})
+            body = item.get("data") if isinstance(item.get("data"), dict) else {}
+            signers = [
+                {"imie_nazwisko": name}
+                for s in (item.get("podpisujacy") or [])
+                if isinstance(s, dict) and (name := _clean_str(s.get("imie_nazwisko")))
+            ]
+            typ = body.get("typ") if body.get("typ") in ("osoba_prawna", "osoba_fizyczna") else "osoba_fizyczna"
             result["mocodawca"].append({
                 "data": {
-                    "imie_nazwisko": body.get("imie_nazwisko") or None,
-                    "krs": normalize_digits(body.get("krs"), (10,)),
-                    "nazwa": body.get("nazwa") or None,
+                    "imie_nazwisko": _clean_str(body.get("imie_nazwisko")) if typ == "osoba_fizyczna" else None,
+                    "krs": normalize_digits(body.get("krs"), (10,), zero_pad=10) if typ == "osoba_prawna" else None,
+                    "nazwa": _clean_str(body.get("nazwa")),
                     "nip": normalize_digits(body.get("nip"), (10,)),
-                    "typ": body.get("typ") if body.get("typ") in ("osoba_prawna", "osoba_fizyczna") else "osoba_fizyczna",
+                    "typ": typ,
                 },
                 "podpisujacy": signers,
             })
@@ -219,18 +242,23 @@ def normalize_document(class_id: str, raw: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(item, dict):
                 continue
             result["pelnomocnicy"].append({
-                "imie_nazwisko": str(item.get("imie_nazwisko") or ""),
+                "imie_nazwisko": _clean_str(item.get("imie_nazwisko")) or "",
                 "pesel": _nullable_pesel(item.get("pesel")),
             })
         return result
+
     if class_id == "przelew":
-        bank = data.get("przelew_bankowy") or {}
-        return {"przelew_bankowy": {
-            "data_operacji": normalize_date(bank.get("data_operacji")),
-            "kwota": _nullable_float(bank.get("kwota")),
-            "na_rachunek": normalize_digits(bank.get("na_rachunek"), (26,)),
-            "numer_transakcji": bank.get("numer_transakcji") or None,
-            "tytul": bank.get("tytul") or None,
-            "z_rachunku": normalize_digits(bank.get("z_rachunku"), (26,)),
-        }}
-    return {}
+        bank = data.get("przelew_bankowy") if isinstance(data.get("przelew_bankowy"), dict) else {}
+        return {
+            "przelew_bankowy": {
+                "data_operacji": normalize_date(bank.get("data_operacji")),
+                "kwota": _nullable_float(bank.get("kwota")),
+                "na_rachunek": normalize_account(bank.get("na_rachunek")),
+                "numer_transakcji": _clean_str(bank.get("numer_transakcji")),
+                "tytul": _clean_str(bank.get("tytul")),
+                "z_rachunku": normalize_account(bank.get("z_rachunku")),
+            }
+        }
+
+    # IMPORTANT: Support any newly added YAML class dynamically instead of returning {}!
+    return _clean_generic(data)

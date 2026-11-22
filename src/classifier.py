@@ -6,11 +6,10 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from openai import OpenAI
 
-from .models import DocumentClassConfig, DocumentDTO, load_document_configs
-from .llm_client import call_llm_with_retry
+from .llm_client import call_llm_with_retry, get_client
 from .logging_config import log_intermediate
+from .models import DocumentClassConfig, DocumentDTO, load_document_configs
 
 logger = logging.getLogger(__name__)
 load_dotenv()
@@ -20,39 +19,38 @@ class DocumentClassifier:
     def __init__(self, config_directory: str | Path = "configs") -> None:
         self.configs = load_document_configs(config_directory)
 
-    def _heuristic(self, text: str) -> tuple[str | None, int]:
+    def _keyword_hints(self, text: str) -> dict[str, int]:
         text_lower = text.casefold()
-        best_id: str | None = None
-        best_score = 0
-        for config in self.configs:
-            score = sum(
-                2 if keyword.casefold() in text_lower else 0
-                for keyword in config.classification_keywords
-            )
-            if score > best_score:
-                best_score = score
-                best_id = config.class_id
-        return best_id, best_score
+        return {
+            cfg.class_id: sum(1 for kw in cfg.classification_keywords if kw.casefold() in text_lower)
+            for cfg in self.configs
+        }
 
-    def _llm_classify(self, document: DocumentDTO) -> str | None:
+    def _llm_classify(self, document: DocumentDTO, hints: dict[str, int]) -> tuple[str | None, float]:
         api_key = os.getenv("LLM_API_KEY")
         base_url = os.getenv("LLM_BASE_URL")
         model = os.getenv("LLM_MODEL")
         if not api_key or not base_url or not model:
-            return None
-        client = OpenAI(api_key=api_key, base_url=base_url)
-        allowed = ", ".join(config.class_id for config in self.configs)
-        descriptions = "\n".join(
-            f"- {config.class_id}: {config.description}" for config in self.configs
-        )
+            return None, 0.0
+
+        client = get_client(api_key, base_url)
+        allowed = ", ".join(cfg.class_id for cfg in self.configs)
+        descriptions = "\n".join(f"- {cfg.class_id}: {cfg.description}" for cfg in self.configs)
+        text = document.get_relevant_text(int(os.getenv("MAX_FIRST_PAGES", "4")), True)[:10_000]
+
         prompt = (
-            "Jesteś klasyfikatorem polskich dokumentów zamówień publicznych. "
-            f"Klasy dozwolone: {allowed}. UNKNOWN oznacza brak dopasowania.\n"
-            f"{descriptions}\n\n"
-            "Zwróć WYŁĄCZNIE obiekt JSON: {\"class_id\":\"...\"}.\n"
-            "Treść dokumentu:\n" + document.get_relevant_text(
-                int(os.getenv("MAX_FIRST_PAGES", "4")), True
-            )[:20_000]
+            "Jesteś klasyfikatorem polskich dokumentów zamówień publicznych. Ignoruj nazwę pliku.\n"
+            f"Dozwolone klasy: {allowed}, UNKNOWN.\n"
+            f"{descriptions}\n"
+            "- UNKNOWN: KAŻDY inny dokument, w tym: ogłoszenie o zamówieniu (TED / OJ S / BZP), "
+            "wyrok lub postanowienie KIO ('Krajowa Izba Odwoławcza w składzie... po rozpoznaniu... orzeka'), "
+            "prezentacja lub materiał szkoleniowy o KIO, SWZ/OPZ, decyzja ministra lub urzędu, "
+            "pismo przewodnie, broszura, przystąpienie, wezwanie, informacja z otwarcia ofert, "
+            "faktura, KRS, odpowiedź zamawiającego, oraz dokument zawierający jedynie pouczenie "
+            "o możliwości złożenia odwołania do KIO.\n\n"
+            f"Pomocnicza liczba trafień słów kluczowych: {hints}\n"
+            'Zwróć WYŁĄCZNIE JSON: {"class_id": "...", "confidence": 0.95, "reason": "..."}.\n\n'
+            f"Treść dokumentu:\n{text}"
         )
         try:
             response = call_llm_with_retry(
@@ -65,35 +63,26 @@ class DocumentClassifier:
                 temperature=0,
                 response_format={"type": "json_object"},
             )
-            payload = json.loads(response.choices[0].message.content or "{}")
-            log_intermediate(
-                logger,
-                f"Odpowiedź LLM klasyfikacji {document.source_path}",
-                response.choices[0].message.content or "{}",
-            )
-            candidate = payload.get("class_id")
-            return candidate if candidate in {config.class_id for config in self.configs} else None
+            raw_content = response.choices[0].message.content or "{}"
+            log_intermediate(logger, f"Odpowiedź LLM klasyfikacji {document.source_path}", raw_content)
+            payload = json.loads(raw_content)
+            candidate = str(payload.get("class_id", "UNKNOWN")).strip()
+            confidence = float(payload.get("confidence", 1.0) or 0.0)
+            valid_ids = {cfg.class_id for cfg in self.configs}
+            if candidate in valid_ids and confidence >= float(os.getenv("MIN_CLASS_CONFIDENCE", "0.60")):
+                return candidate, confidence
+            return None, confidence
         except Exception as exc:
             logger.warning("LLM classification failed: %s", exc)
-            return None
+            return None, 0.0
 
     def classify(self, document: DocumentDTO) -> DocumentClassConfig | None:
-        text = document.get_relevant_text(
-            int(os.getenv("MAX_FIRST_PAGES", "4")), True
-        )
-        log_intermediate(logger, f"Tekst przekazany do klasyfikacji {document.source_path}", text)
-        heuristic_id, score = self._heuristic(text)
-        logger.info(
-            "Klasyfikacja heurystyczna %s: wynik=%s, wynik punktowy=%d",
-            document.source_path,
-            heuristic_id or "UNKNOWN",
-            score,
-        )
-        if score >= 4:
-            return next(config for config in self.configs if config.class_id == heuristic_id)
-        llm_id = self._llm_classify(document)
+        text = document.get_relevant_text(int(os.getenv("MAX_FIRST_PAGES", "4")), True)
+        if not text.strip():
+            return None
+        hints = self._keyword_hints(text)
+        llm_id, conf = self._llm_classify(document, hints)
+        logger.info("Klasyfikacja %s: wynik=%s (conf=%.2f, hints=%s)", document.source_path, llm_id or "UNKNOWN", conf, hints)
         if llm_id:
-            return next(config for config in self.configs if config.class_id == llm_id)
-        if score >= 2 and heuristic_id:
-            return next(config for config in self.configs if config.class_id == heuristic_id)
+            return next(cfg for cfg in self.configs if cfg.class_id == llm_id)
         return None

@@ -1,11 +1,26 @@
+# docker-compose.yml
 services:
-  odwolania2json:
+  ui:
     build: .
     env_file:
       - .env
+    restart: unless-stopped
     ports:
-      - "8501:8501"
+      - "8000:8501"
     volumes:
       - ./input:/app/input
       - ./output:/app/output
       - ./configs:/app/configs
+      - ./logs:/app/logs
+
+  cli:
+    build: .
+    env_file:
+      - .env
+    profiles: ["cli"]
+    command: ["python", "main.py", "--input", "/app/input", "--output", "/app/output", "--configs", "/app/configs"]
+    volumes:
+      - ./input:/app/input
+      - ./output:/app/output
+      - ./configs:/app/configs
+      - ./logs:/app/logs

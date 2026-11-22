@@ -1,5 +1,5 @@
 class_id: odwolanie
-description: "Odwołanie wnoszone do Prezesa Krajowej Izby Odwoławczej (KIO) w postępowaniu o udzielenie zamówienia publicznego (nie dotyczy pism przewodnich, wezwań ani przystąpień)."
+description: "Odwołanie wnoszone do Prezesa Krajowej Izby Odwoławczej (KIO) w postępowaniu o udzielenie zamówienia publicznego (NIE dotyczy wyroków ani postanowień KIO, ogłoszeń TED/BZP, SWZ, pism przewodnich, wezwań, prezentacji ani przystąpień)."
 classification_keywords:
   - "odwołanie"
   - "prezesa krajowej izby odwoławczej"
@@ -13,9 +13,12 @@ pages_strategy:
   include_last: true
 schema_spec:
   instrukcje_domenowe:
-    - "Zwróć WYŁĄCZNIE poprawny obiekt JSON zgodny ze wzorcem ponizej. Nie wymyślaj brakujących danych (użyj null)."
+    - "Zwróć WYŁĄCZNIE poprawny obiekt JSON zgodny ze wzorcem poniżej. Nie wymyślaj brakujących danych (użyj null)."
+    - "OdwolanieKIO.data to WYŁĄCZNIE data sporządzenia odwołania z nagłówka pierwszej strony (jeśli brak daty w nagłówku, zwróć null — nie używaj daty zaskarżonej czynności ani dat z uzasadnienia)."
     - "Odwolujacy: zawsze zwracaj listę. Jeżeli odwołanie składa konsorcjum wykonawców, wyodrębnij WYŁĄCZNIE lidera konsorcjum (1 element na liście)."
+    - "Jeśli nagłówek 'Odwołujący:' jest zamazany (RODO / czarny prostokąt), sprawdź pierwszy akapit po słowie ODWOŁANIE (np. 'w imieniu wykonawcy ... wnoszę odwołanie'). Zamazane pola zwracaj jako null (nigdy '***' ani '[REDACTED]')."
     - "przez-pelnomocnika: wpisz 1, jeżeli odwołanie wnosi lub podpisuje pełnomocnik; wpisz 0, jeżeli odwołujący działa samodzielnie. Gdy 0, pola w obiekcie pelnomocnik ustaw na null."
+    - "pelnomocnik.imie_nazwisko zapisz w polskim MIANOWNIKU (np. 'Jan Kowalski')."
     - "czynnosc_powod_id: wybierz liczbę całkowitą 1-12 WYŁĄCZNIE na podstawie PIERWSZEGO zarzutu lub pierwszej zaskarżonej czynności:"
     - "  1 = Decyzja o odrzuceniu oferty"
     - "  2 = Ogłoszenie wyboru oferty"
@@ -31,10 +34,12 @@ schema_spec:
     - "  12 = Projektowane postanowienia umowy"
     - "Zamawiajacy: lista zamawiających. Jeżeli jest tylko jeden zamawiający, prowadzacy_postepowanie MUSI wynosić null. Jeżeli jest kilku zamawiających, podmiot prowadzący postępowanie ma 1, a pozostali 0."
     - "Numery NIP, KRS, REGON zapisuj jako ciągi samych cyfr (bez myślników, spacji i prefiksu PL)."
+    - "Ignoruj daty i sygnatury historycznych wyroków KIO cytowanych w Uzasadnieniu (np. 'wyrok KIO z dnia 4 marca 2024 r., sygn. akt KIO 440/24')."
+    - "numer_bzp zapisuj bez spacji jako 'YYYY/BZP########' (np. '2026/BZP00999778'). numer_ted zapisuj jako 'NNNNNN-YYYY' (np. '999137-2026')."
   wzorzec_json:
     OdwolanieKIO:
-      data: "YYYY-MM-DD lub null (data sporządzenia odwołania)"
-      czynnosc_dzien: "YYYY-MM-DD lub null (data dokonania zaskarżonej czynności lub powzięcia wiadomości o niej)"
+      data: "YYYY-MM-DD lub null (data sporządzenia odwołania z nagłówka)"
+      czynnosc_dzien: "YYYY-MM-DD lub null (data czynności dla PIERWSZEGO zarzutu)"
       czynnosc_powod_id: "int (1-12) lub null"
       czynnosc_opis: null
       miejscowosc: "string lub null (miejscowość z nagłówka odwołania)"
@@ -55,7 +60,7 @@ schema_spec:
         regon: "string (9 lub 14 cyfr) lub null"
         prowadzacy_postepowanie: "int (1 lub 0) lub null"
     ZamowieniePubliczne:
-      numer_bzp: "string w formacie 'YYYY/BZP ########' lub 'YYYY/BZP ########/##' albo null"
+      numer_bzp: "string w formacie 'YYYY/BZP########' lub 'YYYY/BZP########/##' albo null"
       numer_postepowania: "string lub null (znak sprawy / numer referencyjny zamawiającego)"
       numer_ted: "string w formacie 'NNNNNN-YYYY' lub null"
       tytul: "string lub null (nazwa/przedmiot zamówienia)"

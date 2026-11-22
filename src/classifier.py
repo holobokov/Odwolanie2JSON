@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-from .llm_client import call_llm_with_retry, get_client
+from .llm_client import call_llm_with_retry, get_client, parse_json_response
 from .logging_config import log_intermediate
 from .models import DocumentClassConfig, DocumentDTO, load_document_configs
 
@@ -27,13 +26,13 @@ class DocumentClassifier:
         }
 
     def _llm_classify(self, document: DocumentDTO, hints: dict[str, int]) -> tuple[str | None, float]:
-        api_key = os.getenv("LLM_API_KEY")
+        api_key = os.getenv("LLM_API_KEY", "").strip()
         base_url = os.getenv("LLM_BASE_URL")
         model = os.getenv("LLM_MODEL")
-        if not api_key or not base_url or not model:
+        if not base_url or not model:
             return None, 0.0
-
         client = get_client(api_key, base_url)
+
         allowed = ", ".join(cfg.class_id for cfg in self.configs)
         descriptions = "\n".join(f"- {cfg.class_id}: {cfg.description}" for cfg in self.configs)
         text = document.get_relevant_text(int(os.getenv("MAX_FIRST_PAGES", "4")), True)[:10_000]
@@ -61,11 +60,12 @@ class DocumentClassifier:
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0,
+                max_tokens=1024,
                 response_format={"type": "json_object"},
             )
             raw_content = response.choices[0].message.content or "{}"
             log_intermediate(logger, f"Odpowiedź LLM klasyfikacji {document.source_path}", raw_content)
-            payload = json.loads(raw_content)
+            payload = parse_json_response(raw_content)
             candidate = str(payload.get("class_id", "UNKNOWN")).strip()
             confidence = float(payload.get("confidence", 1.0) or 0.0)
             valid_ids = {cfg.class_id for cfg in self.configs}

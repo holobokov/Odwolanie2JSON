@@ -22,10 +22,10 @@ class LLMExtractor:
         self.config_directory = Path(config_directory)
 
     def extract(self, document: DocumentDTO, config: DocumentClassConfig) -> dict[str, Any]:
-        api_key = os.getenv("LLM_API_KEY")
+        api_key = os.getenv("LLM_API_KEY", "").strip()
         base_url = os.getenv("LLM_BASE_URL")
         model = os.getenv("LLM_MODEL")
-        if not api_key or not base_url or not model:
+        if not base_url or not model:
             logger.warning("LLM configuration is incomplete; extraction skipped")
             return normalize_document(config.class_id, {})
 
@@ -55,6 +55,7 @@ class LLMExtractor:
                 model=model,
                 messages=messages,
                 temperature=0,
+                max_tokens=2048,
                 response_format={"type": "json_object"},
             )
             content = response.choices[0].message.content or "{}"
